@@ -9,4 +9,11 @@ cidrs        = {
 	load_balancer  = "10.20.30.0/24"
 }
 
+#-------Availability Zones for Various Purposes
+#Referenced like "${var.availability_zones["1"]}"
+availability_zones = {
+	az1 = "us-east-1a"
+	az2 = "us-east-1b"
+	az3 = "us-east-1c"
+}
 #-------
