@@ -55,7 +55,7 @@ EOF
 resource "aws_vpc" "app_vpc" {
   cidr_block           = "${var.vpc_cidr}"
   enable_dns_hostnames = true
-  enable_dns_support  = true
+  enable_dns_support   = true
 
   tags {
     Name = "app_vpc"
@@ -77,6 +77,7 @@ resource "aws_subnet" "load_balancer_subnet1" {
   cidr_block              = "${var.cidrs["load_balancer"]}"
   map_public_ip_on_launch = false
   availability_zone       = "${data.aws_availability_zones.available.names[0]}"
+  name                    = "whatever"
 
   tags {
     Name = "public_load_balancer1_subnet"
@@ -86,9 +87,9 @@ resource "aws_subnet" "load_balancer_subnet1" {
 resource "aws_subnet" "load_balancer_subnet2" {
   vpc_id                  = "${aws_vpc.app_vpc.id}"
   cidr_block              = "${var.cidrs["load_balancer"]}"
-  map_public_ip_on_launch = false 	
+  map_public_ip_on_launch = false
   availability_zone       = "${data.aws_availability_zones.available.names[1]}"
-  
+
   tags {
     Name = "public_load_balancer2_subnet"
   }
@@ -123,7 +124,7 @@ resource "aws_subnet" "database_subnet1" {
   cidr_block              = "${var.cidrs["database"]}"
   map_public_ip_on_launch = false
   availability_zone       = "${data.aws_availability_zones.available.names[0]}"
-  
+
   tags {
     Name = "database1_subnet"
   }
@@ -145,7 +146,7 @@ resource "aws_db_subnet_group" "database_subnetgroup" {
   name = "database_subnetgroup"
 
   subnet_ids = ["${aws_subnet.database_subnet1.id}",
-    "${aws_subnet.database_subnet2.id}"
+    "${aws_subnet.database_subnet2.id}",
   ]
 
   tags {
@@ -155,7 +156,7 @@ resource "aws_db_subnet_group" "database_subnetgroup" {
 
 #Elastic IP
 resource "aws_eip" "elastic_ip" {
-	vpc = true
+  vpc = true
 }
 
 #NAT Gateway
@@ -202,7 +203,7 @@ resource "aws_route_table" "application_rt" {
 #Route Table for Database
 resource "aws_route_table" "database_rt" {
   vpc_id = "${aws_vpc.app_vpc.id}"
-  
+
   route {
     cidr_block     = "0.0.0.0/0"
     nat_gateway_id = "${aws_nat_gateway.app_nat_gateway.id}"
@@ -243,6 +244,5 @@ resource "aws_route_table_association" "database2_assoc" {
   subnet_id      = "${aws_subnet.database_subnet2.id}"
   route_table_id = "${aws_route_table.database_rt.id}"
 }
-
 
 data "aws_availability_zones" "available" {}
