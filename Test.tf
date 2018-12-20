@@ -433,3 +433,90 @@ resource "aws_db_instance" "app_db" {
   vpc_security_group_ids = ["${aws_security_group.database_sg.id}"]
   skip_final_snapshot    = true
 }
+#------ Load Balancers ------
+#---Public Load Balancer---
+resource "aws_lb" "public_load_balancer" {
+  name               = "public-load-balancer-sg"
+  internal           = false
+  load_balancer_type = "application"
+  #  security_groups    = ["${aws_security group.public_load_balancer_sg.id}"]
+  subnets = ["${aws_subnet.application_subnet1.id}",
+    "${aws_subnet.application_subnet2.id}",
+  ]
+}
+#---Public Load Balancer Target Group---
+resource "aws_lb_target_group" "public_load_balancer_tg" {
+  name     = "public-load-balancer-tg"
+  vpc_id   = "${aws_vpc.app_vpc.id}"
+  port     = 80
+  protocol = "HTTP"
+  health_check {
+    healthy_threshold   = "${var.elb_healthy_threshold}"
+    unhealthy_threshold = "${var.elb_unhealthy_threshold}"
+    timeout             = "${var.elb_timeout}"
+    port                = "80"
+    path                = "/"
+    interval            = "${var.elb_interval}"
+    matcher             = "200"
+  }
+}
+#CERTIFICATE STUFF
+resource "tls_private_key" "tls_key" {
+  algorithm   = "ECDSA"
+  ecdsa_curve = "P384"
+}
+resource "tls_self_signed_cert" "tls_cert" {
+  key_algorithm   = "ECDSA"
+  private_key_pem = "${tls_private_key.tls_key.id}"
+
+  subject {
+    common_name  = "notarealwebsite.com"
+    organization = "notarealwebsite"
+  }
+
+  validity_period_hours = 360
+
+  allowed_uses = [
+    "key_encipherment",
+    "digital_signature",
+    "server_auth"
+  ]
+}
+resource "aws_iam_server_certificate" "deploy_cert" {
+  name_prefix      = "deploy-cert"
+  certificate_body = "${tls_self_signed_cert.tls_cert.id}"
+  private_key      = "${tls_private_key.tls_key.id}"
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+#---Load Balancer Listener Redirect---
+resource "aws_lb_listener" "public_load_balancer_redirect" {
+  load_balancer_arn = "${aws_lb.public_load_balancer.id}"
+  port              = "80"
+  protocol          = "HTTP"
+
+  default_action {
+    type = "redirect"
+
+    redirect {
+      port        = "443"
+      protocol    = "HTTPS"
+      status_code = "HTTP_301"
+    }
+  }
+}
+#---Load Balancer Listener HTTPS---
+resource "aws_lb_listener" "public_load_balancer_https" {
+  load_balancer_arn = "${aws_lb.public_load_balancer.id}"
+  port              = "443"
+  protocol          = "HTTPS"
+  ssl_policy        = "ELBSecurityPolicy-2016-08"
+  certificate_arn   = "${aws_iam_server_certificate.deploy_cert.id}"
+
+  default_action {
+    type             = "forward"
+    target_group_arn = "${aws_lb_target_group.public_load_balancer_tg.id}"
+  }
+}
