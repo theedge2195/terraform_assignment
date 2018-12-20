@@ -2,7 +2,6 @@ provider "aws" {
   region  = "${var.aws_region}"
   profile = "${var.aws_profile}"
 }
-
 #--- IAM ---
 
 #RDS_Access
@@ -405,17 +404,21 @@ resource "aws_security_group" "application_sg" {
 resource "aws_security_group" "database_sg" {
   name        = "database_sg"
   description = "Used for RDS instances"
-  ingress {
   vpc_id      = "${aws_vpc.app_vpc.id}"
+
   #sql access from public/private security groups
+
   ingress {
     from_port = 3306
     to_port   = 3306
     protocol  = "tcp"
+
     security_groups = ["${aws_security_group.application_sg.id}"]
   }
 }
+
 #------ RDS INSTANCE ------
+
 resource "aws_db_instance" "app_db" {
   allocated_storage      = 10
   engine                 = "mysql"
@@ -428,23 +431,28 @@ resource "aws_db_instance" "app_db" {
   vpc_security_group_ids = ["${aws_security_group.database_sg.id}"]
   skip_final_snapshot    = true
 }
-#------ Load Balancers ------
+
+#------ Load Balancer ------
+
 #---Public Load Balancer---
 resource "aws_lb" "public_load_balancer" {
   name               = "public-load-balancer-sg"
   internal           = false
   load_balancer_type = "application"
+
   #  security_groups    = ["${aws_security group.public_load_balancer_sg.id}"]
   subnets = ["${aws_subnet.application_subnet1.id}",
     "${aws_subnet.application_subnet2.id}",
   ]
 }
+
 #---Public Load Balancer Target Group---
 resource "aws_lb_target_group" "public_load_balancer_tg" {
   name     = "public-load-balancer-tg"
   vpc_id   = "${aws_vpc.app_vpc.id}"
   port     = 80
   protocol = "HTTP"
+
   health_check {
     healthy_threshold   = "${var.elb_healthy_threshold}"
     unhealthy_threshold = "${var.elb_unhealthy_threshold}"
@@ -455,6 +463,7 @@ resource "aws_lb_target_group" "public_load_balancer_tg" {
     matcher             = "200"
   }
 }
+
 #CERTIFICATE STUFF
 resource "tls_private_key" "tls_key" {
   algorithm   = "ECDSA"
@@ -515,12 +524,8 @@ resource "aws_lb_listener" "public_load_balancer_https" {
     target_group_arn = "${aws_lb_target_group.public_load_balancer_tg.id}"
   }
 }
-#key pair for instance
-resource "aws_key_pair" "auth_key" {
-  key_name   = "${var.key_name}"
-  public_key = "${file(var.public_key_path)}"
-}
-#------ DEV Server ------
+
+#-----Dev Server ------
 #key pair for instance
 resource "aws_key_pair" "auth_key" {
   key_name   = "${var.key_name}"
@@ -533,25 +538,24 @@ resource "aws_instance" "app_dev" {
     Name = "app_dev"
   }
   key_name               = "${aws_key_pair.auth_key.id}"
+    "Version": "2012-10-17",
   vpc_security_group_ids = ["${aws_security_group.application_sg.id}"]
   iam_instance_profile   = "${aws_iam_instance_profile.rds_access_profile.id}"
   subnet_id              = "${aws_subnet.application_subnet1.id}"
-provisioner "local-exec" {
+  provisioner "local-exec" {
     command = <<EOT
 cat <<EOF > userdata
 #!/bin/bash
 sudo yum update -y
-sudo yum install php 
+sudo yum install httpd -y
 EOF
 EOT
   }
 }
-
 #Random ami id
 resource "random_id" "launch_prefix_ami" {
   byte_length = 3
 }
-
 # AMI
 resource "aws_ami_from_instance" "launch_ami" {
   name               = "launch_ami-${random_id.launch_prefix_ami.b64}"
