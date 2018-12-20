@@ -55,7 +55,7 @@ EOF
 resource "aws_vpc" "app_vpc" {
   cidr_block           = "${var.vpc_cidr}"
   enable_dns_hostnames = true
-  enable_dns_support  = true
+  enable_dns_support   = true
 
   tags {
     Name = "app_vpc"
@@ -86,9 +86,9 @@ resource "aws_subnet" "load_balancer_subnet1" {
 resource "aws_subnet" "load_balancer_subnet2" {
   vpc_id                  = "${aws_vpc.app_vpc.id}"
   cidr_block              = "${var.cidrs["load_balancer"]}"
-  map_public_ip_on_launch = false 	
+  map_public_ip_on_launch = false
   availability_zone       = "${data.aws_availability_zones.available.names[1]}"
-  
+
   tags {
     Name = "public_load_balancer2_subnet"
   }
@@ -123,7 +123,7 @@ resource "aws_subnet" "database_subnet1" {
   cidr_block              = "${var.cidrs["database"]}"
   map_public_ip_on_launch = false
   availability_zone       = "${data.aws_availability_zones.available.names[0]}"
-  
+
   tags {
     Name = "database1_subnet"
   }
@@ -145,7 +145,7 @@ resource "aws_db_subnet_group" "database_subnetgroup" {
   name = "database_subnetgroup"
 
   subnet_ids = ["${aws_subnet.database_subnet1.id}",
-    "${aws_subnet.database_subnet2.id}"
+    "${aws_subnet.database_subnet2.id}",
   ]
 
   tags {
@@ -155,7 +155,7 @@ resource "aws_db_subnet_group" "database_subnetgroup" {
 
 #Elastic IP
 resource "aws_eip" "elastic_ip" {
-	vpc = true
+  vpc = true
 }
 
 #NAT Gateway
@@ -202,7 +202,7 @@ resource "aws_route_table" "application_rt" {
 #Route Table for Database
 resource "aws_route_table" "database_rt" {
   vpc_id = "${aws_vpc.app_vpc.id}"
-  
+
   route {
     cidr_block     = "0.0.0.0/0"
     nat_gateway_id = "${aws_nat_gateway.app_nat_gateway.id}"
@@ -284,7 +284,7 @@ resource "aws_network_acl" "load_balancer_nacl" {
     to_port    = 443
   }
 }
-	
+
 #NACL for Application
 resource "aws_network_acl" "application_nacl" {
   vpc_id = "${aws_vpc.app_vpc.id}"
@@ -304,9 +304,9 @@ resource "aws_network_acl" "application_nacl" {
     action     = "allow"
     cidr_block = "10.20.30.0/24"
     from_port  = 443
-    to_port    = 443  
+    to_port    = 443
   }
-  
+
   egress {
     protocol   = "tcp"
     rule_no    = 200
@@ -322,7 +322,7 @@ resource "aws_network_acl" "application_nacl" {
     action     = "allow"
     cidr_block = "10.20.10.0/24"
     from_port  = 3306
-    to_port    = 3306 
+    to_port    = 3306
   }
 }
 
@@ -377,7 +377,6 @@ resource "aws_security_group" "public_load_balancer_sg" {
   }
 }
 
-
 #private security group
 
 resource "aws_security_group" "application_sg" {
@@ -406,21 +405,17 @@ resource "aws_security_group" "application_sg" {
 resource "aws_security_group" "database_sg" {
   name        = "database_sg"
   description = "Used for RDS instances"
+  ingress {
   vpc_id      = "${aws_vpc.app_vpc.id}"
-
   #sql access from public/private security groups
-
   ingress {
     from_port = 3306
     to_port   = 3306
     protocol  = "tcp"
-
     security_groups = ["${aws_security_group.application_sg.id}"]
   }
 }
-
 #------ RDS INSTANCE ------
-
 resource "aws_db_instance" "app_db" {
   allocated_storage      = 10
   engine                 = "mysql"
@@ -518,5 +513,36 @@ resource "aws_lb_listener" "public_load_balancer_https" {
   default_action {
     type             = "forward"
     target_group_arn = "${aws_lb_target_group.public_load_balancer_tg.id}"
+  }
+}
+#key pair for instance
+resource "aws_key_pair" "auth_key" {
+  key_name   = "${var.key_name}"
+  public_key = "${file(var.public_key_path)}"
+}
+#------ DEV Server ------
+#key pair for instance
+resource "aws_key_pair" "auth_key" {
+  key_name   = "${var.key_name}"
+  public_key = "${file(var.public_key_path)}"
+}
+resource "aws_instance" "app_dev" {
+  instance_type = "${var.dev_instance_type}"
+  ami           = "${var.dev_ami}"
+  tags {
+    Name = "app_dev"
+  }
+  key_name               = "${aws_key_pair.auth_key.id}"
+  vpc_security_group_ids = ["${aws_security_group.application_sg.id}"]
+  iam_instance_profile   = "${aws_iam_instance_profile.rds_access_profile.id}"
+  subnet_id              = "${aws_subnet.application_subnet1.id}"
+  provisioner "local-exec" {
+    command = <<EOT
+cat <<EOF > userdata
+#!/bin/bash
+sudo yum update -y
+sudo yum install httpd -y
+EOF
+EOT
   }
 }
