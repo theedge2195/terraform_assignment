@@ -536,13 +536,59 @@ resource "aws_instance" "app_dev" {
   vpc_security_group_ids = ["${aws_security_group.application_sg.id}"]
   iam_instance_profile   = "${aws_iam_instance_profile.rds_access_profile.id}"
   subnet_id              = "${aws_subnet.application_subnet1.id}"
-  provisioner "local-exec" {
+provisioner "local-exec" {
     command = <<EOT
 cat <<EOF > userdata
 #!/bin/bash
 sudo yum update -y
-sudo yum install httpd -y
+sudo yum install php 
 EOF
 EOT
+  }
+}
+
+#Random ami id
+resource "random_id" "launch_prefix_ami" {
+  byte_length = 3
+}
+
+# AMI
+resource "aws_ami_from_instance" "launch_ami" {
+  name               = "launch_ami-${random_id.launch_prefix_ami.b64}"
+  source_instance_id = "${aws_instance.app_dev.id}"
+}
+#------Launch Configuration------
+resource "aws_launch_configuration" "app_lc" {
+  name_prefix          = "app_lc-"
+  image_id             = "${aws_ami_from_instance.launch_ami.id}"
+  instance_type        = "${var.lc_instance_type}"
+  security_groups      = ["${aws_security_group.application_sg.id}"]
+  iam_instance_profile = "${aws_iam_instance_profile.rds_access_profile.id}"
+  key_name             = "${aws_key_pair.auth_key.id}"
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+#------ASG------
+resource "aws_autoscaling_group" "app_asg" {
+  name                      = "asg-${aws_launch_configuration.app_lc.id}"
+  max_size                  = "${var.asg_max}"
+  min_size                  = "${var.asg_min}"
+  health_check_grace_period = "${var.asg_grace}"
+  health_check_type         = "${var.asg_hct}"
+  desired_capacity          = "${var.asg_cap}"
+  force_delete              = true
+  target_group_arns         = ["${aws_lb_target_group.public_load_balancer_tg.id}"]
+  vpc_zone_identifier = ["${aws_subnet.application_subnet1.id}",
+    "${aws_subnet.application_subnet2.id}"
+  ]
+  launch_configuration = "${aws_launch_configuration.app_lc.name}"
+  tag {
+    key                 = "Name"
+    value               = "app_asg-instance"
+    propagate_at_launch = true
+  }
+  lifecycle {
+    create_before_destroy = true
   }
 }
