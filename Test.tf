@@ -538,7 +538,6 @@ resource "aws_instance" "app_dev" {
     Name = "app_dev"
   }
   key_name               = "${aws_key_pair.auth_key.id}"
-    "Version": "2012-10-17",
   vpc_security_group_ids = ["${aws_security_group.application_sg.id}"]
   iam_instance_profile   = "${aws_iam_instance_profile.rds_access_profile.id}"
   subnet_id              = "${aws_subnet.application_subnet1.id}"
